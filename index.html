@@ -1,16 +1,9 @@
-<!DOCTYPE html>
-<html>
+<!DOCTYPE html >
   <head>
-  
-    <title>Geolocation</title>
-         <link rel="icon" 
-      type="image/png" 
-      href="https://caravela.files.wordpress.com/2016/07/ico.png">
-  
-  
-    <meta charset="UTF-8">
-    <meta name="viewport" content="initial-scale=1.0" />
-    <style type="text/css">
+    <meta name="viewport" content="initial-scale=1.0, user-scalable=no" />
+    <meta http-equiv="content-type" content="text/html; charset=UTF-8"/>
+    <title>From Info Windows to a Database: Saving User-Added Form Data</title>
+    <style>
       /* Always set the map height explicitly to define the size of the div
        * element that contains the map. */
       #map {
@@ -24,94 +17,97 @@
       }
     </style>
   </head>
-  <body id="map-container">
-    <div id="map"></div>
+  <body>
+    <div id="map" height="460px" width="100%"></div>
+    <div id="form">
+      <table>
+      <tr><td>Name:</td> <td><input type='text' id='name'/> </td> </tr>
+      <tr><td>Address:</td> <td><input type='text' id='address'/> </td> </tr>
+      <tr><td>Type:</td> <td><select id='type'> +
+                 <option value='bar' SELECTED>bar</option>
+                 <option value='restaurant'>restaurant</option>
+                 </select> </td></tr>
+                 <tr><td></td><td><input type='button' value='Save' onclick='saveData()'/></td></tr>
+      </table>
+    </div>
+    <div id="message">Location saved</div>
     <script>
       var map;
+      var marker;
+      var infowindow;
+      var messagewindow;
 
       function initMap() {
+        var Dili = {lat: -8.5552, lng: 125.5773};
         map = new google.maps.Map(document.getElementById('map'), {
-          center: {lat: -8.5552, lng: 125.5773},
-          zoom: 2,
-          styles: mapStyle
+          center: Dili,
+          zoom: 13
         });
 
-        map.data.setStyle(styleFeature);
+        infowindow = new google.maps.InfoWindow({
+          content: document.getElementById('form')
+        });
 
-        // Get the earthquake data (JSONP format)
-        // This feed is a copy from the USGS feed, you can find the originals here:
-        //   http://earthquake.usgs.gov/earthquakes/feed/v1.0/geojson.php
-        var script = document.createElement('script');
-        script.setAttribute(
-            'src',
-            'https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/all_hour.geojson');
-        document.getElementsByTagName('head')[0].appendChild(script);
+        messagewindow = new google.maps.InfoWindow({
+          content: document.getElementById('message')
+        });
+
+        google.maps.event.addListener(map, 'click', function(event) {
+          marker = new google.maps.Marker({
+            position: event.latLng,
+            map: map
+          });
+
+
+          google.maps.event.addListener(marker, 'click', function() {
+            infowindow.open(map, marker);
+          });
+        });
       }
 
-      // Defines the callback function referenced in the jsonp file.
-      function eqfeed_callback(data) {
-        map.data.addGeoJson(data);
+      function saveData() {
+        var name = escape(document.getElementById('name').value);
+        var address = escape(document.getElementById('address').value);
+        var type = document.getElementById('type').value;
+        var latlng = marker.getPosition();
+        var url = 'phpsqlinfo_addrow.php?name=' + name + '&address=' + address +
+                  '&type=' + type + '&lat=' + latlng.lat() + '&lng=' + latlng.lng();
+
+        downloadUrl(url, function(data, responseCode) {
+
+          if (responseCode == 200 && data.length <= 1) {
+            infowindow.close();
+            messagewindow.open(map, marker);
+          }
+        });
       }
 
-      function styleFeature(feature) {
-        var low = [151, 83, 34];   // color of mag 1.0
-        var high = [5, 69, 54];  // color of mag 6.0 and above
-        var minMag = 1.0;
-        var maxMag = 6.0;
+      function downloadUrl(url, callback) {
+        var request = window.ActiveXObject ?
+            new ActiveXObject('Microsoft.XMLHTTP') :
+            new XMLHttpRequest;
 
-        // fraction represents where the value sits between the min and max
-        var fraction = (Math.min(feature.getProperty('mag'), maxMag) - minMag) /
-            (maxMag - minMag);
-
-        var color = interpolateHsl(low, high, fraction);
-
-        return {
-          icon: {
-            path: google.maps.SymbolPath.CIRCLE,
-            strokeWeight: 0.5,
-            strokeColor: '#fff',
-            fillColor: color,
-            fillOpacity: 2 / feature.getProperty('mag'),
-            // while an exponent would technically be correct, quadratic looks nicer
-            scale: Math.pow(feature.getProperty('mag'), 2)
-          },
-          zIndex: Math.floor(feature.getProperty('mag'))
+        request.onreadystatechange = function() {
+          if (request.readyState == 4) {
+            request.onreadystatechange = doNothing;
+            callback(request.responseText, request.status);
+          }
         };
+
+        request.open('GET', url, true);
+        request.send(null);
       }
 
-      function interpolateHsl(lowHsl, highHsl, fraction) {
-        var color = [];
-        for (var i = 0; i < 3; i++) {
-          // Calculate color based on the fraction.
-          color[i] = (highHsl[i] - lowHsl[i]) * fraction + lowHsl[i];
-        }
-
-        return 'hsl(' + color[0] + ',' + color[1] + '%,' + color[2] + '%)';
+      function doNothing () {
       }
 
-      var mapStyle = [{
-        'featureType': 'all',
-        'elementType': 'all',
-        'stylers': [{'visibility': 'off'}]
-      }, {
-        'featureType': 'landscape',
-        'elementType': 'geometry',
-        'stylers': [{'visibility': 'on'}, {'color': '#fcfcfc'}]
-      }, {
-        'featureType': 'water',
-        'elementType': 'labels',
-        'stylers': [{'visibility': 'off'}]
-      }, {
-        'featureType': 'water',
-        'elementType': 'geometry',
-        'stylers': [{'visibility': 'on'}, {'hue': '#5f94ff'}, {'lightness': 60}]
-      }];
     </script>
     <script async defer
-    src="https://maps.googleapis.com/maps/api/js?key=AIzaSyAOjWQz_Ofk8SKW1EAfCBTthFPKCfRrV1w&callback=initMap">
+    src="https://maps.googleapis.com/maps/api/js?key=AIzaSyD4TDJ8a5yywp0VuL8nq3_JIjp3W9QaUkM&callback=initMap">
     </script>
   </body>
 </html>
+
 
 
 
